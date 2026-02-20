@@ -1,0 +1,4 @@
+storage/
+uploads/
+*.sqlite
+storage/blank.sqlite
