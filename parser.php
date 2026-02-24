@@ -248,7 +248,17 @@ function getExtractorDiagnostics(): array
 
 function isTableStopLine(string $line): bool
 {
-    return (bool) preg_match('/^(total|purpose|requested|signature|printed|designation|see back|effectivity)\b/i', $line);
+    $line = trim($line);
+    if ($line === '') {
+        return false;
+    }
+
+    // Stop only on true footer labels, not description fragments like
+    // "PURPOSE, 200 GRAMS" that can appear inside item rows.
+    return (bool) preg_match(
+        '/^(?:total(?:\s+cost)?|purpose\s*:|requested\s+by\s*:|signature\s*:|printed\s*name\s*:|designation\s*:|see\s+back\b|effectivity\b)/i',
+        $line
+    );
 }
 
 function isLikelyUnitToken(string $token): bool
@@ -629,6 +639,87 @@ function parseItemFromRowBlock(array $block): ?array
     return $item;
 }
 
+function normalizeItemsColumnAlignment(array $items): array
+{
+    if ($items === []) {
+        return $items;
+    }
+
+    $hasNumericUnitWithoutStock = false;
+    foreach ($items as $item) {
+        $stock = cleanValue($item['stock_property_no'] ?? null);
+        $unit = cleanValue($item['unit'] ?? null);
+        if ($stock === null && $unit !== null && preg_match('/^\d{7,10}$/', $unit)) {
+            $hasNumericUnitWithoutStock = true;
+            break;
+        }
+    }
+
+    if (!$hasNumericUnitWithoutStock) {
+        return $items;
+    }
+
+    $strictUnits = [
+        'pc', 'pcs', 'piece', 'pieces', 'set', 'lot', 'box', 'roll', 'ream',
+        'bottle', 'btl', 'pack', 'pkg', 'unit', 'kg', 'g', 'l', 'ltr', 'meter',
+        'm', 'cm', 'dozen',
+    ];
+
+    foreach ($items as &$item) {
+        $stock = cleanValue($item['stock_property_no'] ?? null);
+        $unit = cleanValue($item['unit'] ?? null);
+        if ($stock !== null && preg_match('/^\d{7,10}$/', $stock)) {
+            if ($unit === null) {
+                $item['unit'] = $stock;
+                $item['stock_property_no'] = null;
+                continue;
+            }
+
+            $isStrictUnit = in_array(strtolower($unit), $strictUnits, true) || (bool) preg_match('/^\d{1,10}$/', $unit);
+            if (!$isStrictUnit) {
+                $item['item_description'] = cleanValue($unit . ' ' . ($item['item_description'] ?? ''));
+                $item['unit'] = $stock;
+                $item['stock_property_no'] = null;
+            }
+        }
+    }
+    unset($item);
+
+    return $items;
+}
+
+function normalizeTrailingDescriptionQuantity(array $items): array
+{
+    foreach ($items as &$item) {
+        $quantity = $item['quantity'] ?? null;
+        $unitCost = $item['unit_cost'] ?? null;
+        $totalCost = $item['total_cost'] ?? null;
+        $description = cleanValue($item['item_description'] ?? null);
+
+        if ($description === null || $quantity !== null || $unitCost !== null || $totalCost !== null) {
+            continue;
+        }
+
+        // Common OCR/layout case: quantity is appended as the last token in description.
+        // Example: "STAPLE REMOVER, PLIER TYPE 100" -> qty=100.
+        if (!preg_match('/^(.*\D)\s+(\d[\d,]*(?:\.\d+)?)$/', $description, $m)) {
+            continue;
+        }
+
+        $qty = parseFloat($m[2] ?? null);
+        $desc = cleanValue($m[1] ?? null);
+        if ($qty === null || $qty <= 0 || $desc === null) {
+            continue;
+        }
+
+        $item['item_description'] = $desc;
+        $item['quantity'] = $qty;
+    }
+    unset($item);
+
+    return $items;
+}
+
 function parsePurchaseRequestFields(string $text): array
 {
     $normalized = preg_replace('/\r\n?|\n/u', "\n", $text) ?? $text;
@@ -654,20 +745,44 @@ function parsePurchaseRequestFields(string $text): array
 
     $requestedBy = null;
     $approvedBy = null;
-    if (preg_match('/Printed\s*Name\s*:\s*(.+?)(?:\n|$)/i', $normalized, $nameLineMatch)) {
-        $nameLine = cleanValue($nameLineMatch[1] ?? null);
-        if ($nameLine !== null) {
-            if (preg_match('/^(.+?)\s{2,}(.+)$/', $nameLine, $splitBySpaces)) {
-                $requestedBy = cleanValue($splitBySpaces[1]);
-                $approvedBy = cleanValue($splitBySpaces[2]);
-            } elseif (preg_match('/^([A-Z\s\.]+)\s+([A-Z][a-z].+)$/', $nameLine, $splitByCase)) {
-                $requestedBy = cleanValue($splitByCase[1]);
-                $approvedBy = cleanValue($splitByCase[2]);
-            } else {
-                $parts = preg_split('/\s+/', $nameLine) ?: [];
-                $mid = intdiv(count($parts), 2);
-                $requestedBy = cleanValue(implode(' ', array_slice($parts, 0, $mid)));
-                $approvedBy = cleanValue(implode(' ', array_slice($parts, $mid)));
+    if (preg_match('/Printed\s*Name\s*:\s*(.*?)(?:\n\s*Designation\s*:|$)/is', $normalized, $nameBlockMatch)) {
+        $nameBlock = trim((string) ($nameBlockMatch[1] ?? ''));
+        $nameLines = array_values(array_filter(
+            array_map(static fn($line) => cleanValue($line), preg_split('/\n+/', $nameBlock) ?: []),
+            static fn($line) => $line !== null && $line !== ''
+        ));
+
+        $leftParts = [];
+        $rightParts = [];
+        foreach ($nameLines as $line) {
+            if (preg_match('/^(.+?)\s{2,}(.+)$/', (string) $line, $splitBySpaces)) {
+                $leftParts[] = cleanValue($splitBySpaces[1] ?? null);
+                $rightParts[] = cleanValue($splitBySpaces[2] ?? null);
+            }
+        }
+
+        if ($leftParts !== [] && $rightParts !== []) {
+            $requestedBy = cleanValue(implode(' ', array_filter($leftParts, static fn($v) => $v !== null && $v !== '')));
+            $approvedBy = cleanValue(implode(' ', array_filter($rightParts, static fn($v) => $v !== null && $v !== '')));
+        } elseif (count($nameLines) >= 2) {
+            // Fallback for wrapped two-column names where extraction flattened spacing.
+            $requestedBy = cleanValue((string) $nameLines[0]);
+            $approvedBy = cleanValue(implode(' ', array_map(static fn($v) => (string) $v, array_slice($nameLines, 1))));
+        } elseif (count($nameLines) === 1) {
+            $nameLine = cleanValue((string) $nameLines[0]);
+            if ($nameLine !== null) {
+                if (preg_match('/^(.+?)\s{2,}(.+)$/', $nameLine, $splitBySpaces)) {
+                    $requestedBy = cleanValue($splitBySpaces[1]);
+                    $approvedBy = cleanValue($splitBySpaces[2]);
+                } elseif (preg_match('/^([A-Z\s\.]+)\s+([A-Z][a-z].+)$/', $nameLine, $splitByCase)) {
+                    $requestedBy = cleanValue($splitByCase[1]);
+                    $approvedBy = cleanValue($splitByCase[2]);
+                } else {
+                    $parts = preg_split('/\s+/', $nameLine) ?: [];
+                    $mid = intdiv(count($parts), 2);
+                    $requestedBy = cleanValue(implode(' ', array_slice($parts, 0, $mid)));
+                    $approvedBy = cleanValue(implode(' ', array_slice($parts, $mid)));
+                }
             }
         }
     }
@@ -717,7 +832,8 @@ function parsePurchaseRequestFields(string $text): array
         $totalCost = parseMoney(is_string($last) ? $last : null);
     }
 
-    $items = parseItemsFromTableSlice($tableSlice);
+    $items = normalizeItemsColumnAlignment(parseItemsFromTableSlice($tableSlice));
+    $items = normalizeTrailingDescriptionQuantity($items);
 
     if ($items !== []) {
         $first = $items[0];

@@ -3,15 +3,35 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
+
+requireAuth();
+$authUser = currentUser();
 
 $pdo = db();
-$rows = $pdo->query(
+$perPage = 20;
+$totalRecords = (int) $pdo->query('SELECT COUNT(*) FROM purchase_requests')->fetchColumn();
+$totalPages = max(1, (int) ceil($totalRecords / $perPage));
+$page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+if ($page < 1) {
+    $page = 1;
+}
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+$offset = ($page - 1) * $perPage;
+
+$listStmt = $pdo->prepare(
     'SELECT pr.*,
             (SELECT COUNT(*) FROM purchase_request_items pri WHERE pri.purchase_request_id = pr.id) AS items_count
      FROM purchase_requests pr
      ORDER BY pr.id DESC
-     LIMIT 100'
-)->fetchAll();
+     LIMIT :limit OFFSET :offset'
+);
+$listStmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$listStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$listStmt->execute();
+$rows = $listStmt->fetchAll();
 
 function e(?string $value): string
 {
@@ -77,11 +97,17 @@ function e(?string $value): string
                 <div>
                     <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Document Intelligence</p>
                     <h1 class="text-3xl md:text-4xl font-semibold mt-2">Purchase Request Converter</h1>
-                    <p class="text-slate-600 mt-3 max-w-2xl">Upload a PR PDF, extract required fields, and persist everything to SQLite for fast retrieval and downstream processing.</p>
+                    <p class="text-slate-600 mt-3 max-w-2xl">Upload a PR PDF, extract required fields, and persist everything to MySQL for fast retrieval and downstream processing.</p>
                 </div>
-                <div class="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3">
-                    <p class="text-xs uppercase tracking-widest text-teal-800 text-center">Records Stored</p>
-                    <p id="recordsCount" class="text-2xl font-semibold text-teal-900 text-center"><?= count($rows) ?></p>
+                <div class="flex flex-col gap-3 min-w-[220px]">
+                    <div class="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3">
+                        <p class="text-xs uppercase tracking-widest text-teal-800 text-center">Records Stored</p>
+                        <p id="recordsCount" class="text-2xl font-semibold text-teal-900 text-center"><?= $totalRecords ?></p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                        <p class="truncate font-medium"><?= e((string) ($authUser['name'] ?? $authUser['username'] ?? $authUser['email'] ?? 'User')) ?></p>
+                        <a href="logout.php" class="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100">Logout</a>
+                    </div>
                 </div>
             </div>
         </section>
@@ -111,7 +137,7 @@ function e(?string $value): string
             <div class="lg:col-span-4 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 fade-in">
                 <div class="flex items-center justify-between">
                     <h2 class="text-xl font-semibold">Saved Records</h2>
-                    <span class="text-xs text-slate-500">Latest 100</span>
+                    <span class="text-xs text-slate-500">Page <?= $page ?> of <?= $totalPages ?> · 20 per page</span>
                 </div>
 
                 <div class="mt-4 overflow-auto">
@@ -128,7 +154,7 @@ function e(?string $value): string
                                 <th class="py-2 pr-4 text-center">Action</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="recordsTableBody">
                             <?php if (!$rows): ?>
                                 <tr>
                                     <td colspan="8" class="py-8 text-center text-slate-500">No records yet.</td>
@@ -172,6 +198,29 @@ function e(?string $value): string
                         </tbody>
                     </table>
                 </div>
+                <?php if ($totalPages > 1): ?>
+                    <?php
+                    $startPage = max(1, $page - 2);
+                    $endPage = min($totalPages, $startPage + 4);
+                    $startPage = max(1, $endPage - 4);
+                    ?>
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                        <a
+                            href="?page=<?= max(1, $page - 1) ?>"
+                            class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $page <= 1 ? 'pointer-events-none border-slate-200 text-slate-400 bg-slate-50' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
+                        >Prev</a>
+                        <?php for ($p = $startPage; $p <= $endPage; $p++): ?>
+                            <a
+                                href="?page=<?= $p ?>"
+                                class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $p === $page ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
+                            ><?= $p ?></a>
+                        <?php endfor; ?>
+                        <a
+                            href="?page=<?= min($totalPages, $page + 1) ?>"
+                            class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $page >= $totalPages ? 'pointer-events-none border-slate-200 text-slate-400 bg-slate-50' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
+                        >Next</a>
+                    </div>
+                <?php endif; ?>
             </div>
         </section>
     </main>
@@ -283,6 +332,7 @@ function e(?string $value): string
             <div class="rounded-2xl bg-white border border-slate-200 shadow-xl p-6">
                 <h3 class="text-lg font-semibold text-slate-900">Processing Complete</h3>
                 <p id="processConfirmText" class="text-sm text-slate-600 mt-2">Found 0 item(s). Continue saving to database?</p>
+                <p id="processLoadingState" class="hidden mt-3 text-sm text-slate-600">Saving record and loading to table...</p>
                 <div class="mt-6 flex items-center justify-end gap-3">
                     <button type="button" id="cancelProcessBtn" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
                     <button type="button" id="continueProcessBtn" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Continue</button>
@@ -308,6 +358,7 @@ function e(?string $value): string
             designation2: 'Designation2'
         };
         let pendingDelete = null;
+        const PAGE_SIZE = <?= (int) $perPage ?>;
         let pendingProcess = null;
         let currentItemsContext = { prId: null, prNo: '' };
         let pendingItemDelete = null;
@@ -339,7 +390,7 @@ function e(?string $value): string
         }
 
         function ensureEmptyState() {
-            const tbody = $('table tbody');
+            const tbody = $('#recordsTableBody');
             if (tbody.find('tr[data-row-id]').length > 0) {
                 return;
             }
@@ -361,6 +412,83 @@ function e(?string $value): string
             });
 
             result.removeClass('hidden');
+        }
+
+        function formatMoney(value) {
+            if (value === null || value === '' || Number.isNaN(Number(value))) {
+                return '-';
+            }
+            return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function setProcessLoadingState(isLoading) {
+            $('#processLoadingState').toggleClass('hidden', !isLoading);
+            $('#continueProcessBtn').prop('disabled', isLoading).text(isLoading ? 'Saving...' : 'Continue');
+            $('#cancelProcessBtn').prop('disabled', isLoading);
+        }
+
+        function prependSavedRecordRow(res) {
+            const row = (res && (res.row || res.data)) ? (res.row || res.data) : {};
+            const rowId = Number(row.id || res.record_id || 0);
+            if (!rowId) {
+                return false;
+            }
+
+            const prNo = row.pr_no || '';
+            const requestDate = row.request_date || '';
+            const fundCluster = row.fund_cluster || '';
+            const requestedBy = row.requested_by || '';
+            const totalCost = row.total_cost ?? null;
+            const itemsCount = Number(row.items_count ?? (res.items_count ?? 0));
+
+            const tbody = $('#recordsTableBody');
+            tbody.find('tr').filter(function () {
+                return $(this).find('td').length === 1 && $(this).text().includes('No records yet.');
+            }).remove();
+
+            tbody.prepend(
+                `<tr class="border-b border-slate-100 hover:bg-slate-50/70" data-row-id="${rowId}">
+                    <td class="py-2 pr-4 font-medium">${rowId}</td>
+                    <td class="py-2 pr-4">
+                        <a class="font-medium text-teal-700 hover:text-teal-900 underline underline-offset-2" href="export.php?id=${rowId}" title="Download XLSX">
+                            ${escapeHtml(prNo)}
+                        </a>
+                    </td>
+                    <td class="py-2 pr-4">${escapeHtml(requestDate || '-')}</td>
+                    <td class="py-2 pr-4">${escapeHtml(fundCluster || '-')}</td>
+                    <td class="py-2 pr-4 text-center">
+                        <button
+                            type="button"
+                            class="js-items-btn inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100"
+                            data-id="${rowId}"
+                            data-pr="${escapeHtml(prNo)}"
+                        >
+                            ${itemsCount}
+                        </button>
+                    </td>
+                    <td class="js-pr-total py-2 pr-4 text-right">${formatMoney(totalCost)}</td>
+                    <td class="py-2 pr-4">${escapeHtml(requestedBy || '-')}</td>
+                    <td class="py-2 pr-4 text-center">
+                        <button
+                            type="button"
+                            class="js-delete-btn inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                            data-id="${rowId}"
+                            data-pr="${escapeHtml(prNo)}"
+                        >
+                            Delete
+                        </button>
+                    </td>
+                </tr>`
+            );
+
+            const recordsCount = $('#recordsCount');
+            const currentCount = parseInt(recordsCount.text(), 10) || 0;
+            recordsCount.text(currentCount + 1);
+            const rows = tbody.find('tr[data-row-id]');
+            if (rows.length > PAGE_SIZE) {
+                rows.slice(PAGE_SIZE).remove();
+            }
+            return true;
         }
 
         function openModal(id) {
@@ -742,6 +870,7 @@ function e(?string $value): string
                 $('#processConfirmText').text(`Found ${pendingProcess.items_count} item(s). Continue saving to database?`);
                 renderResult(pendingProcess.data);
                 showStatus('info', `Found ${pendingProcess.items_count} item(s). Choose Continue to save or Cancel to discard.`);
+                setProcessLoadingState(false);
                 openModal('#processConfirmModal');
             }).fail(function (xhr) {
                 let message = 'Unexpected error while processing the file.';
@@ -790,6 +919,7 @@ function e(?string $value): string
             cancelPendingProcess().always(function () {
                 pendingProcess = null;
                 btn.prop('disabled', false).text('Cancel');
+                setProcessLoadingState(false);
                 closeModal('#processConfirmModal');
                 showStatus('info', 'Processing canceled. Entry was not saved.');
             });
@@ -802,8 +932,7 @@ function e(?string $value): string
                 return;
             }
 
-            const btn = $(this);
-            btn.prop('disabled', true).text('Saving...');
+            setProcessLoadingState(true);
 
             $.ajax({
                 url: 'upload.php',
@@ -816,14 +945,22 @@ function e(?string $value): string
             }).done(function (res) {
                 if (!res.ok) {
                     showStatus('error', res.message || 'Failed to save entry.');
+                    setProcessLoadingState(false);
+                    return;
+                }
+
+                renderResult(res.data || {});
+                const rendered = prependSavedRecordRow(res);
+                if (!rendered) {
+                    showStatus('error', 'Saved, but failed to render the row in table.');
+                    setProcessLoadingState(false);
                     return;
                 }
 
                 showStatus('success', `Saved successfully. Record ID: ${res.record_id}`);
-                renderResult(res.data || {});
                 pendingProcess = null;
+                setProcessLoadingState(false);
                 closeModal('#processConfirmModal');
-                setTimeout(() => window.location.reload(), 1000);
             }).fail(function (xhr) {
                 let message = 'Failed to save entry.';
                 try {
@@ -834,8 +971,7 @@ function e(?string $value): string
                 } catch (_) {}
 
                 showStatus('error', message);
-            }).always(function () {
-                btn.prop('disabled', false).text('Continue');
+                setProcessLoadingState(false);
             });
         });
     </script>

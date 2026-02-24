@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/xlsx_export.php';
+
+requireAuth();
 
 if (!class_exists('ZipArchive')) {
     http_response_code(500);
