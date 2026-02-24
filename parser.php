@@ -245,11 +245,11 @@ except Exception:
 sys.stdout.buffer.write((text or "").encode("utf-8", errors="ignore"))
 PY;
 
-    $fallbackDir = __DIR__ . DIRECTORY_SEPARATOR . 'storage';
-    if (!is_dir($fallbackDir)) {
-        mkdir($fallbackDir, 0777, true);
+    $tmpBaseDir = findWritableTempDir();
+    if ($tmpBaseDir === null) {
+        return '';
     }
-    $tmpPath = $fallbackDir . DIRECTORY_SEPARATOR . 'pdfparse_' . bin2hex(random_bytes(6));
+    $tmpPath = $tmpBaseDir . DIRECTORY_SEPARATOR . 'pdfparse_' . bin2hex(random_bytes(6));
 
     $pyPath = $tmpPath . '.py';
     if (file_put_contents($pyPath, $script) === false) {
@@ -279,6 +279,30 @@ PY;
             unlink($tmpPath);
         }
     }
+}
+
+function findWritableTempDir(): ?string
+{
+    $candidates = [];
+
+    $projectStorage = __DIR__ . DIRECTORY_SEPARATOR . 'storage';
+    $candidates[] = $projectStorage;
+
+    $systemTmp = sys_get_temp_dir();
+    if (is_string($systemTmp) && $systemTmp !== '') {
+        $candidates[] = $systemTmp;
+    }
+
+    foreach ($candidates as $dir) {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        if (is_dir($dir) && is_writable($dir)) {
+            return $dir;
+        }
+    }
+
+    return null;
 }
 
 function getExtractorDiagnostics(): array
