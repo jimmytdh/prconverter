@@ -44,6 +44,10 @@ function e(?string $value): string
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>PR Converter</title>
+    <link rel="icon" type="image/png" href="src/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <style>
@@ -58,20 +62,23 @@ function e(?string $value): string
         }
 
         body {
+            font-family: "Manrope", system-ui, sans-serif;
             background:
-                radial-gradient(1200px 500px at 15% -5%, #ccfbf1 0%, transparent 60%),
-                radial-gradient(900px 400px at 95% -10%, #fde68a 0%, transparent 50%),
-                linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+                radial-gradient(1300px 560px at 10% -12%, #99f6e4 0%, transparent 58%),
+                radial-gradient(1000px 500px at 100% -18%, #fde68a 0%, transparent 55%),
+                linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
             color: var(--ink);
         }
 
-        .glass {
-            backdrop-filter: blur(6px);
-            background: rgba(255, 255, 255, 0.82);
+        .glass-hero {
+            backdrop-filter: blur(12px);
+            background: linear-gradient(120deg, rgba(15, 23, 42, 0.90) 0%, rgba(15, 118, 110, 0.82) 100%);
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.22);
         }
 
-        .header-shadow {
-            box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+        .premium-card {
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 16px 50px rgba(15, 23, 42, 0.10);
         }
 
         .fade-in {
@@ -92,38 +99,42 @@ function e(?string $value): string
 </head>
 <body class="min-h-screen">
     <main class="max-w-7xl mx-auto px-4 py-8 md:py-12">
-        <section class="glass header-shadow rounded-3xl border border-white/70 p-6 md:p-8 fade-in">
+        <section class="glass-hero relative overflow-hidden rounded-3xl border border-white/20 p-6 md:p-8 fade-in">
+            <div class="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                 <div>
-                    <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Document Intelligence</p>
-                    <h1 class="text-3xl md:text-4xl font-semibold mt-2">Purchase Request Converter</h1>
-                    <p class="text-slate-600 mt-3 max-w-2xl">Upload a PR PDF, extract required fields, and persist everything to MySQL for fast retrieval and downstream processing.</p>
+                    <div class="inline-flex items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-3 py-2">
+                        <img src="src/logo.png" alt="CSMC Logo" class="h-10 w-10 rounded-full bg-white p-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-teal-100">Document Intelligence</p>
+                    </div>
+                    <h1 class="text-3xl md:text-4xl font-semibold mt-3 text-white">Purchase Request Converter</h1>
+                    <p class="text-slate-100/90 mt-3 max-w-2xl">Upload PR forms, extract structured fields, and manage procurement data in a secure, production-ready workspace.</p>
                 </div>
                 <div class="flex flex-col gap-3 min-w-[220px]">
-                    <div class="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3">
+                    <div class="rounded-2xl border border-white/30 bg-white/90 px-4 py-3">
                         <p class="text-xs uppercase tracking-widest text-teal-800 text-center">Records Stored</p>
-                        <p id="recordsCount" class="text-2xl font-semibold text-teal-900 text-center"><?= $totalRecords ?></p>
+                        <p id="recordsCount" class="text-2xl font-semibold text-slate-900 text-center"><?= $totalRecords ?></p>
                     </div>
-                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                        <p class="truncate font-medium"><?= e((string) ($authUser['name'] ?? $authUser['username'] ?? $authUser['email'] ?? 'User')) ?></p>
-                        <a href="logout.php" class="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100">Logout</a>
+                    <div class="rounded-2xl border border-white/35 bg-white/95 px-4 py-3 text-sm text-slate-700">
+                        <p class="truncate font-semibold text-slate-900"><?= e((string) ($authUser['name'] ?? $authUser['username'] ?? $authUser['email'] ?? 'User')) ?></p>
+                        <a href="logout.php" class="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">Logout</a>
                     </div>
                 </div>
             </div>
         </section>
 
         <section class="mt-8 grid grid-cols-1 lg:grid-cols-5 gap-6">
-            <div class="lg:col-span-1 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 fade-in">
+            <div class="lg:col-span-1 premium-card rounded-3xl border border-white/80 p-6 fade-in">
                 <h2 class="text-xl font-semibold">Upload PDF</h2>
                 <p class="text-sm text-slate-600 mt-1">Supports text-based and scanned PR forms (OCR fallback).</p>
 
                 <form id="uploadForm" class="mt-6 space-y-4" enctype="multipart/form-data">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-2" for="pdf">PDF File</label>
-                        <input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required class="block w-full rounded-xl border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700" />
+                        <input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required class="block w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700" />
                     </div>
 
-                    <button id="submitBtn" type="submit" class="w-full rounded-xl bg-slate-900 px-4 py-3 text-white font-medium hover:bg-slate-800 transition">Process & Save</button>
+                    <button id="submitBtn" type="submit" class="w-full rounded-xl bg-slate-900 px-4 py-3 text-white font-semibold hover:bg-slate-800 transition">Process & Save</button>
                 </form>
 
                 <div id="status" class="hidden mt-4 rounded-xl border px-4 py-3 text-sm"></div>
@@ -134,43 +145,41 @@ function e(?string $value): string
                 </div>
             </div>
 
-            <div class="lg:col-span-4 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 fade-in">
+            <div class="lg:col-span-4 premium-card rounded-3xl border border-white/80 p-6 fade-in">
                 <div class="flex items-center justify-between">
                     <h2 class="text-xl font-semibold">Saved Records</h2>
                     <span class="text-xs text-slate-500">Page <?= $page ?> of <?= $totalPages ?> · 20 per page</span>
                 </div>
 
-                <div class="mt-4 overflow-auto">
+                <div class="mt-4 overflow-auto rounded-2xl border border-slate-200 bg-white">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-slate-500 border-b border-slate-200">
-                                <th class="py-2 pr-4">ID</th>
-                                <th class="py-2 pr-4">PR No.</th>
-                                <th class="py-2 pr-4">Date</th>
-                                <th class="py-2 pr-4">Fund Cluster</th>
-                                <th class="py-2 pr-4 text-center">Items</th>
-                                <th class="py-2 pr-4 text-right">Total Cost</th>
-                                <th class="py-2 pr-4">Requested By</th>
-                                <th class="py-2 pr-4 text-center">Action</th>
+                            <tr class="text-left text-slate-500 border-b border-slate-200 bg-slate-50/80">
+                                <th class="px-4 py-3">PR No.</th>
+                                <th class="px-4 py-3">Date</th>
+                                <th class="px-4 py-3">Fund Cluster</th>
+                                <th class="px-4 py-3 text-center">Items</th>
+                                <th class="px-4 py-3 text-right">Total Cost</th>
+                                <th class="px-4 py-3">Requested By</th>
+                                <th class="px-4 py-3 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="recordsTableBody">
                             <?php if (!$rows): ?>
                                 <tr>
-                                    <td colspan="8" class="py-8 text-center text-slate-500">No records yet.</td>
+                                    <td colspan="7" class="py-8 text-center text-slate-500">No records yet.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($rows as $row): ?>
-                                    <tr class="border-b border-slate-100 hover:bg-slate-50/70" data-row-id="<?= (int) $row['id'] ?>">
-                                        <td class="py-2 pr-4 font-medium"><?= (int) $row['id'] ?></td>
-                                        <td class="py-2 pr-4">
+                                    <tr class="border-b border-slate-100 hover:bg-teal-50/40 transition" data-row-id="<?= (int) $row['id'] ?>">
+                                        <td class="px-4 py-3">
                                             <a class="font-medium text-teal-700 hover:text-teal-900 underline underline-offset-2" href="export.php?id=<?= (int) $row['id'] ?>" title="Download XLSX">
                                                 <?= e($row['pr_no']) ?>
                                             </a>
                                         </td>
-                                        <td class="py-2 pr-4"><?= e($row['request_date']) ?></td>
-                                        <td class="py-2 pr-4"><?= e($row['fund_cluster']) ?></td>
-                                        <td class="py-2 pr-4 text-center">
+                                        <td class="px-4 py-3"><?= e($row['request_date']) ?></td>
+                                        <td class="px-4 py-3"><?= e($row['fund_cluster']) ?></td>
+                                        <td class="px-4 py-3 text-center">
                                             <button
                                                 type="button"
                                                 class="js-items-btn inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100"
@@ -180,9 +189,9 @@ function e(?string $value): string
                                                 <?= (int) ($row['items_count'] ?? 0) ?>
                                             </button>
                                         </td>
-                                        <td class="js-pr-total py-2 pr-4 text-right"><?= $row['total_cost'] !== null ? number_format((float) $row['total_cost'], 2) : '-' ?></td>
-                                        <td class="py-2 pr-4"><?= e($row['requested_by']) ?></td>
-                                        <td class="py-2 pr-4 text-center">
+                                        <td class="js-pr-total px-4 py-3 text-right"><?= $row['total_cost'] !== null ? number_format((float) $row['total_cost'], 2) : '-' ?></td>
+                                        <td class="px-4 py-3"><?= e($row['requested_by']) ?></td>
+                                        <td class="px-4 py-3 text-center">
                                             <button
                                                 type="button"
                                                 class="js-delete-btn inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
@@ -396,7 +405,7 @@ function e(?string $value): string
             }
 
             if (tbody.find('tr').length === 0) {
-                tbody.append('<tr><td colspan="8" class="py-8 text-center text-slate-500">No records yet.</td></tr>');
+                tbody.append('<tr><td colspan="7" class="py-8 text-center text-slate-500">No records yet.</td></tr>');
             }
         }
 
@@ -448,15 +457,14 @@ function e(?string $value): string
 
             tbody.prepend(
                 `<tr class="border-b border-slate-100 hover:bg-slate-50/70" data-row-id="${rowId}">
-                    <td class="py-2 pr-4 font-medium">${rowId}</td>
-                    <td class="py-2 pr-4">
+                    <td class="px-4 py-3">
                         <a class="font-medium text-teal-700 hover:text-teal-900 underline underline-offset-2" href="export.php?id=${rowId}" title="Download XLSX">
                             ${escapeHtml(prNo)}
                         </a>
                     </td>
-                    <td class="py-2 pr-4">${escapeHtml(requestDate || '-')}</td>
-                    <td class="py-2 pr-4">${escapeHtml(fundCluster || '-')}</td>
-                    <td class="py-2 pr-4 text-center">
+                    <td class="px-4 py-3">${escapeHtml(requestDate || '-')}</td>
+                    <td class="px-4 py-3">${escapeHtml(fundCluster || '-')}</td>
+                    <td class="px-4 py-3 text-center">
                         <button
                             type="button"
                             class="js-items-btn inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100"
@@ -466,9 +474,9 @@ function e(?string $value): string
                             ${itemsCount}
                         </button>
                     </td>
-                    <td class="js-pr-total py-2 pr-4 text-right">${formatMoney(totalCost)}</td>
-                    <td class="py-2 pr-4">${escapeHtml(requestedBy || '-')}</td>
-                    <td class="py-2 pr-4 text-center">
+                    <td class="js-pr-total px-4 py-3 text-right">${formatMoney(totalCost)}</td>
+                    <td class="px-4 py-3">${escapeHtml(requestedBy || '-')}</td>
+                    <td class="px-4 py-3 text-center">
                         <button
                             type="button"
                             class="js-delete-btn inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
