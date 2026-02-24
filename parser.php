@@ -65,17 +65,68 @@ function extractTextFromPdf(string $pdfPath): string
 {
     $escaped = escapeshellarg($pdfPath);
 
-    $text = extractViaPdfToText($escaped);
-    if (strlen(trim($text)) > 80) {
-        return $text;
+    $candidates = [];
+
+    $textPdfToText = extractViaPdfToText($escaped);
+    if (strlen(trim($textPdfToText)) > 80) {
+        $candidates['pdftotext'] = $textPdfToText;
     }
 
-    $text = extractViaPython($pdfPath);
-    if (strlen(trim($text)) > 80) {
-        return $text;
+    $textPython = extractViaPython($pdfPath);
+    if (strlen(trim($textPython)) > 80) {
+        $candidates['python'] = $textPython;
     }
 
-    return $text;
+    if ($candidates === []) {
+        return $textPython !== '' ? $textPython : $textPdfToText;
+    }
+
+    if (count($candidates) === 1) {
+        return (string) reset($candidates);
+    }
+
+    $bestText = '';
+    $bestScore = PHP_INT_MIN;
+    foreach ($candidates as $text) {
+        $score = estimateExtractionScore($text);
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $bestText = $text;
+        }
+    }
+
+    return $bestText;
+}
+
+function estimateExtractionScore(string $text): int
+{
+    $parsed = parsePurchaseRequestFields($text);
+    $items = is_array($parsed['items'] ?? null) ? $parsed['items'] : [];
+    $itemsCount = count($items);
+
+    $withQty = 0;
+    $withUnit = 0;
+    foreach ($items as $item) {
+        if (($item['quantity'] ?? null) !== null) {
+            $withQty++;
+        }
+        if (cleanValue($item['unit'] ?? null) !== null) {
+            $withUnit++;
+        }
+    }
+
+    $score = ($itemsCount * 100) + ($withQty * 5) + $withUnit;
+    if (cleanValue($parsed['pr_no'] ?? null) !== null) {
+        $score += 20;
+    }
+    if (cleanValue($parsed['requested_by'] ?? null) !== null) {
+        $score += 10;
+    }
+    if (cleanValue($parsed['approved_by'] ?? null) !== null) {
+        $score += 10;
+    }
+
+    return $score;
 }
 
 function extractViaPdfToText(string $escapedPdfPath): string
