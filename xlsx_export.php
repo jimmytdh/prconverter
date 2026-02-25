@@ -42,6 +42,49 @@ function estimateRowHeight(string $text, int $base = 24): int
     return min(140, $base + ($extraLines * 14));
 }
 
+function textLen(string $text): int
+{
+    return function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+}
+
+function estimateWrappedLineCount(string $text, int $charsPerLine): int
+{
+    $text = str_replace("\r", '', $text);
+    $parts = explode("\n", $text);
+    $lines = 0;
+    $charsPerLine = max(1, $charsPerLine);
+
+    foreach ($parts as $part) {
+        $len = textLen($part);
+        $lines += max(1, (int) ceil($len / $charsPerLine));
+    }
+
+    return max(1, $lines);
+}
+
+function estimateMergedRowHeight(
+    string $text,
+    array $columnWidths,
+    int $startCol,
+    int $endCol,
+    int $minHeight = 24,
+    int $maxHeight = 180
+): int {
+    $width = 0.0;
+    for ($c = $startCol; $c <= $endCol; $c++) {
+        $width += (float) ($columnWidths[$c] ?? 10);
+    }
+
+    // Excel column width is roughly character capacity; apply small padding discount.
+    $charsPerLine = max(8, (int) floor($width - 2));
+    $lineCount = estimateWrappedLineCount($text, $charsPerLine);
+
+    // Approximate Calibri/Cambria 12pt wrapped line height in points.
+    $height = (int) ceil(($lineCount * 15) + 8);
+
+    return max($minHeight, min($maxHeight, $height));
+}
+
 function normalizeExportItems(array $row): array
 {
     $items = [];
@@ -113,6 +156,7 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
     $entityName = 'Entity Name: CEBU SOUTH MEDICAL CENTER';
     $requestedBlock = trim($requestedBy . "\n" . $designation1);
     $approvedBlock = trim($approvedBy . "\n" . $designation2);
+    $purposeText = "Purpose:\nState your purpose here..";
 
     $items = normalizeExportItems($row);
     $itemCount = max(1, count($items));
@@ -134,6 +178,16 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
     $rowSigEnd = $rowSigStart + 1;
     $rowFooter = $rowSigEnd + 1;
     $maxRow = $rowFooter + $footerSpacerRows;
+    $columnWidths = [
+        1 => 16.0,
+        2 => 14.0,
+        3 => 23.0,
+        4 => 10.0,
+        5 => 12.0,
+        6 => 10.0,
+        7 => 10.0,
+        8 => 16.0,
+    ];
 
     if ($totalCost === null) {
         $sum = 0.0;
@@ -196,16 +250,16 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
     $cells['G' . $rowTotalStart] = ['value' => 'Total Cost', 'style' => 6, 'numeric' => false];
     $cells['H' . $rowTotalStart] = ['value' => $totalCost, 'style' => 5, 'numeric' => true];
 
-    $cells['A' . $rowPurposeStart] = ['value' => "Purpose:\n______________________________\n______________________________\n______________________________", 'style' => 7, 'numeric' => false];
+    $cells['A' . $rowPurposeStart] = ['value' => $purposeText, 'style' => 11, 'numeric' => false];
 
     $cells['C' . $rowReqHeaderStart] = ['value' => 'Requested by:', 'style' => 6, 'numeric' => false];
     $cells['F' . $rowReqHeaderStart] = ['value' => 'Approved by:', 'style' => 6, 'numeric' => false];
 
     $cells['A' . $rowSigStart] = ['value' => "Signature :\nPrinted Name :\nDesignation :", 'style' => 7, 'numeric' => false];
-    $cells['C' . $rowSigStart] = ['value' => '______________________________', 'style' => 7, 'numeric' => false];
-    $cells['F' . $rowSigStart] = ['value' => '______________________________', 'style' => 7, 'numeric' => false];
-    $cells['C' . $rowSigEnd] = ['value' => $requestedBlock, 'style' => 7, 'numeric' => false];
-    $cells['F' . $rowSigEnd] = ['value' => $approvedBlock, 'style' => 7, 'numeric' => false];
+    $cells['C' . $rowSigStart] = ['value' => '', 'style' => 7, 'numeric' => false];
+    $cells['F' . $rowSigStart] = ['value' => '', 'style' => 7, 'numeric' => false];
+    $cells['C' . $rowSigEnd] = ['value' => $requestedBlock, 'style' => 10, 'numeric' => false];
+    $cells['F' . $rowSigEnd] = ['value' => $approvedBlock, 'style' => 10, 'numeric' => false];
 
     $cells['A' . $rowFooter] = ['value' => 'See back page for instructions', 'style' => 8, 'numeric' => false];
 
@@ -252,18 +306,22 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
 
     for ($r = $rowItemStart; $r <= $rowItemEnd; $r++) {
         $itemText = (string) ($cells['C' . $r]['value'] ?? '');
-        $rowHeights[$r] = estimateRowHeight($itemText, 26);
+        $rowHeights[$r] = estimateMergedRowHeight($itemText, $columnWidths, 3, 4, 26, 160);
     }
 
     $rowHeights[$rowTotalStart] = 24;
     $rowHeights[$rowTotalEnd] = 24;
-    $rowHeights[$rowPurposeStart] = 24;
-    $rowHeights[$rowPurposeStart + 1] = 24;
-    $rowHeights[$rowPurposeEnd] = 24;
+    $purposeBlockHeight = estimateMergedRowHeight($purposeText, $columnWidths, 1, 8, 72, 180);
+    $purposeRowEach = (int) ceil($purposeBlockHeight / 3);
+    $rowHeights[$rowPurposeStart] = $purposeRowEach;
+    $rowHeights[$rowPurposeStart + 1] = $purposeRowEach;
+    $rowHeights[$rowPurposeEnd] = $purposeRowEach;
     $rowHeights[$rowReqHeaderStart] = 24;
     $rowHeights[$rowReqHeaderEnd] = 24;
     $rowHeights[$rowSigStart] = 24;
-    $rowHeights[$rowSigEnd] = 32;
+    $requestBlockHeight = estimateMergedRowHeight($requestedBlock, $columnWidths, 3, 5, 44, 180);
+    $approveBlockHeight = estimateMergedRowHeight($approvedBlock, $columnWidths, 6, 8, 44, 180);
+    $rowHeights[$rowSigEnd] = max($requestBlockHeight, $approveBlockHeight);
     $rowHeights[$rowFooter] = 20;
     for ($r = $rowFooter + 1; $r <= $maxRow; $r++) {
         $rowHeights[$r] = 24;
@@ -378,14 +436,14 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
         . '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
         . '<sheetFormatPr defaultRowHeight="20"/>'
         . '<cols>'
-        . '<col min="1" max="1" width="16" customWidth="1"/>'
-        . '<col min="2" max="2" width="14" customWidth="1"/>'
-        . '<col min="3" max="3" width="23" customWidth="1"/>'
-        . '<col min="4" max="4" width="10" customWidth="1"/>'
-        . '<col min="5" max="5" width="12" customWidth="1"/>'
-        . '<col min="6" max="6" width="10" customWidth="1"/>'
-        . '<col min="7" max="7" width="10" customWidth="1"/>'
-        . '<col min="8" max="8" width="16" customWidth="1"/>'
+        . '<col min="1" max="1" width="' . $columnWidths[1] . '" customWidth="1"/>'
+        . '<col min="2" max="2" width="' . $columnWidths[2] . '" customWidth="1"/>'
+        . '<col min="3" max="3" width="' . $columnWidths[3] . '" customWidth="1"/>'
+        . '<col min="4" max="4" width="' . $columnWidths[4] . '" customWidth="1"/>'
+        . '<col min="5" max="5" width="' . $columnWidths[5] . '" customWidth="1"/>'
+        . '<col min="6" max="6" width="' . $columnWidths[6] . '" customWidth="1"/>'
+        . '<col min="7" max="7" width="' . $columnWidths[7] . '" customWidth="1"/>'
+        . '<col min="8" max="8" width="' . $columnWidths[8] . '" customWidth="1"/>'
         . '</cols>'
         . '<sheetData>' . implode('', $rowsXml) . '</sheetData>'
         . '<mergeCells count="' . count($merges) . '">' . $mergeXml . '</mergeCells>'
@@ -412,7 +470,7 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
         . '<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>'
         . '</borders>'
         . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-        . '<cellXfs count="10">'
+        . '<cellXfs count="12">'
         . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' // 0
         . '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' // 1
         . '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' // 2
@@ -423,6 +481,8 @@ function createPrTemplateXlsx(array $row, string $targetPath): void
         . '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>' // 7
         . '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>' // 8
         . '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>' // 9
+        . '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>' // 10
+        . '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>' // 11
         . '</cellXfs>'
         . '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
         . '</styleSheet>';

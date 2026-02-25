@@ -40,6 +40,58 @@ function parseFloat(?string $value): ?float
     return (float) $normalized;
 }
 
+function normalizeKnownSignatoryName(?string $name): ?string
+{
+    $name = cleanValue($name);
+    if ($name === null) {
+        return null;
+    }
+
+    // Canonicalize known signer variants extracted from OCR/PDF text.
+    if (preg_match('/agustin|agos|d[uy]+ongan/i', $name)) {
+        return 'AGUSTIN D. AGOS, JR., MD, FPSGS, FPCS, MA Psy, DODT, PhD-OD, RODC, APRM™';
+    }
+
+    return $name;
+}
+
+function applySignatoryRoleOverrides(
+    ?string $requestedBy,
+    ?string $designation1,
+    ?string $approvedBy,
+    ?string $designation2
+): array {
+    $requestedBy = cleanValue($requestedBy);
+    $approvedBy = cleanValue($approvedBy);
+    $designation1 = cleanValue($designation1);
+    $designation2 = cleanValue($designation2);
+
+    $canonical = 'AGUSTIN D. AGOS, JR., MD, FPSGS, FPCS, MA Psy, DODT, PhD-OD, RODC, APRM™';
+
+    $requestedCanonical = normalizeKnownSignatoryName($requestedBy);
+    $approvedCanonical = normalizeKnownSignatoryName($approvedBy);
+
+    if ($requestedCanonical === $canonical) {
+        $requestedBy = $canonical;
+        $designation1 = 'Agency Approver';
+        $designation2 = 'Agency Creator';
+    } elseif ($approvedCanonical === $canonical) {
+        $approvedBy = $canonical;
+        $designation2 = 'Agency Approver';
+        $designation1 = 'Agency Creator';
+    } else {
+        $requestedBy = $requestedCanonical;
+        $approvedBy = $approvedCanonical;
+    }
+
+    return [
+        'requested_by' => $requestedBy,
+        'designation1' => $designation1,
+        'approved_by' => $approvedBy,
+        'designation2' => $designation2,
+    ];
+}
+
 function runCommand(string $command, ?int &$exitCode = null): string
 {
     $output = [];
@@ -329,11 +381,29 @@ function isTableStopLine(string $line): bool
     }
 
     // Stop only on true footer labels, not description fragments like
-    // "PURPOSE, 200 GRAMS" that can appear inside item rows.
+    // "TOTAL CHOLESTEROL" or "TOTAL PROTEIN" that can appear inside item rows.
     return (bool) preg_match(
-        '/^(?:total(?:\s+cost)?|purpose\s*:|requested\s+by\s*:|signature\s*:|printed\s*name\s*:|designation\s*:|see\s+back\b|effectivity\b)/i',
+        '/^(?:total\s*cost|purpose\s*:|requested\s+by\s*:|signature\s*:|printed\s*name\s*:|designation\s*:|see\s+back\b|effectivity\b)\s*/i',
         $line
     );
+}
+
+function isPageArtifactLine(string $line): bool
+{
+    $line = trim($line);
+    if ($line === '') {
+        return false;
+    }
+
+    if (stripos($line, 'about:blank') !== false) {
+        return true;
+    }
+
+    if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}\s*(?:am|pm)\b/i', $line)) {
+        return true;
+    }
+
+    return (bool) preg_match('/^\d+\s*\/\s*\d+$/', $line);
 }
 
 function isLikelyUnitToken(string $token): bool
@@ -531,6 +601,10 @@ function parseItemsFromTableSlice(string $tableSlice): array
     $hasRowStart = false;
 
     foreach ($lines as $line) {
+        if (isPageArtifactLine($line)) {
+            continue;
+        }
+
         if (isTableStopLine($line)) {
             // Some files have "Total" / "Cost" in the table header. Only stop once
             // at least one item row has started.
@@ -637,7 +711,7 @@ function parseItemFromRowBlock(array $block): ?array
 
     for ($i = 1; $i < count($block); $i++) {
         $line = $block[$i];
-        if ($line === null || isTableStopLine($line) || isHeaderLikeTableLine($line)) {
+        if ($line === null || isPageArtifactLine($line) || isTableStopLine($line) || isHeaderLikeTableLine($line)) {
             continue;
         }
 
@@ -878,6 +952,12 @@ function parsePurchaseRequestFields(string $text): array
             }
         }
     }
+
+    $signatoryOverride = applySignatoryRoleOverrides($requestedBy, $designation1, $approvedBy, $designation2);
+    $requestedBy = $signatoryOverride['requested_by'];
+    $designation1 = $signatoryOverride['designation1'];
+    $approvedBy = $signatoryOverride['approved_by'];
+    $designation2 = $signatoryOverride['designation2'];
 
     $tableSlice = '';
     if (preg_match('/Responsibility\s*Center\s*Code\s*:?(.*?)(?:Purpose\s*:|Requested\s*by\s*:)/is', $normalized, $sliceMatch)) {

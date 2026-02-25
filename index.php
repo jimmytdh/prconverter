@@ -241,7 +241,10 @@ function e(?string $value): string
             <div class="rounded-2xl bg-white border border-slate-200 shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto">
                 <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
                     <h3 id="itemsModalTitle" class="text-lg font-semibold text-slate-900">PR Items</h3>
-                    <button type="button" id="closeItemsModal" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Close</button>
+                    <div class="inline-flex items-center gap-2">
+                        <button type="button" id="addNewItemBtn" class="rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-800 hover:bg-teal-100">Add New</button>
+                        <button type="button" id="closeItemsModal" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">Close</button>
+                    </div>
                 </div>
                 <div class="p-6">
                     <div class="overflow-auto max-h-[60vh]">
@@ -265,44 +268,52 @@ function e(?string $value): string
                             </tbody>
                         </table>
                     </div>
-                    <div class="mt-5 border-t border-slate-200 pt-4">
-                        <div class="flex items-center justify-between">
-                            <h4 id="itemFormTitle" class="text-sm font-semibold text-slate-900">Add New Item</h4>
-                            <button type="button" id="resetItemFormBtn" class="hidden rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50">Cancel Edit</button>
-                        </div>
-                        <form id="itemForm" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input type="hidden" id="itemFormItemId" name="item_id" value="">
-                            <div>
-                                <label class="block text-xs text-slate-600 mb-1" for="itemStockNo">Stock/Property No.</label>
-                                <input id="itemStockNo" name="stock_property_no" type="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-600 mb-1" for="itemUnit">Unit</label>
-                                <input id="itemUnit" name="unit" type="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                            </div>
-                            <div class="md:col-span-2">
-                                <label class="block text-xs text-slate-600 mb-1" for="itemDescription">Item Description</label>
-                                <textarea id="itemDescription" name="item_description" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-600 mb-1" for="itemQty">Quantity</label>
-                                <input id="itemQty" name="quantity" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-600 mb-1" for="itemUnitCost">Unit Cost</label>
-                                <input id="itemUnitCost" name="unit_cost" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-600 mb-1" for="itemTotalCost">Total Cost</label>
-                                <input id="itemTotalCost" name="total_cost" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                            </div>
-                            <div class="flex items-end">
-                                <button type="submit" id="saveItemBtn" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save Item</button>
-                            </div>
-                        </form>
-                    </div>
                 </div>
             </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="itemEditorModal" class="fixed inset-0 z-50 hidden">
+        <div class="js-close-modal absolute inset-0 bg-slate-900/45" data-modal="#itemEditorModal"></div>
+        <div class="relative z-10 max-w-3xl mx-auto px-4 py-10">
+            <div class="rounded-2xl bg-white border border-slate-200 shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <h4 id="itemFormTitle" class="text-base font-semibold text-slate-900">Add New Item</h4>
+                    <button type="button" class="js-close-modal rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" data-modal="#itemEditorModal">Close</button>
+                </div>
+                <form id="itemForm" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <input type="hidden" id="itemFormItemId" name="item_id" value="">
+                    <div>
+                        <label class="block text-xs text-slate-600 mb-1" for="itemStockNo">Stock/Property No.</label>
+                        <input id="itemStockNo" name="stock_property_no" type="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600 mb-1" for="itemUnit">Unit</label>
+                        <input id="itemUnit" name="unit" type="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs text-slate-600 mb-1" for="itemDescription">Item Description</label>
+                        <textarea id="itemDescription" name="item_description" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600 mb-1" for="itemQty">Quantity</label>
+                        <input id="itemQty" name="quantity" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600 mb-1" for="itemUnitCost">Unit Cost</label>
+                        <input id="itemUnitCost" name="unit_cost" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-600 mb-1" for="itemTotalCost">Total Cost</label>
+                        <input id="itemTotalCost" name="total_cost" type="number" step="0.01" min="0" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div class="md:col-span-2 flex items-center justify-end gap-2 mt-1">
+                        <button type="button" id="resetItemFormBtn" class="hidden rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Reset</button>
+                        <button type="button" class="js-close-modal rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" data-modal="#itemEditorModal">Cancel</button>
+                        <button type="submit" id="saveItemBtn" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save Item</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -645,8 +656,19 @@ function e(?string $value): string
             loadItems(id, pr);
         });
 
+        $('#addNewItemBtn').on('click', function () {
+            if (!currentItemsContext.prId) {
+                showStatus('error', 'Open a PR items list first.');
+                return;
+            }
+            resetItemForm();
+            openModal('#itemEditorModal');
+            $('#itemDescription').trigger('focus');
+        });
+
         $('#closeItemsModal').on('click', function () {
             closeModal('#itemsModal');
+            closeModal('#itemEditorModal');
             resetItemForm();
         });
 
@@ -655,6 +677,10 @@ function e(?string $value): string
             if (modal) {
                 closeModal(modal);
                 if (modal === '#itemsModal') {
+                    closeModal('#itemEditorModal');
+                    resetItemForm();
+                }
+                if (modal === '#itemEditorModal') {
                     resetItemForm();
                 }
             }
@@ -698,6 +724,7 @@ function e(?string $value): string
                 return;
             }
             setItemFormForEdit(item);
+            openModal('#itemEditorModal');
             $('#itemDescription').trigger('focus');
         });
 
@@ -785,6 +812,7 @@ function e(?string $value): string
                 }
 
                 showStatus('success', res.message || 'Item saved successfully.');
+                closeModal('#itemEditorModal');
                 resetItemForm();
                 updateMainRowTotal(currentItemsContext.prId, res.pr_total_cost ?? null);
                 loadItems(currentItemsContext.prId, currentItemsContext.prNo);
