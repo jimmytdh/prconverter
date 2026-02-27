@@ -98,7 +98,7 @@ function e(?string $value): string
     </style>
 </head>
 <body class="min-h-screen">
-    <main class="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <main class="w-full px-4 py-8 md:py-12">
         <section class="glass-hero relative overflow-hidden rounded-3xl border border-white/20 p-6 md:p-8 fade-in">
             <div class="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
