@@ -9,16 +9,35 @@ requireAuth();
 $authUser = currentUser();
 $currentUserSection = currentUserSection();
 $isAdmin = currentUserIsAdmin();
+$searchPrNo = trim((string) ($_GET['pr_no'] ?? ''));
 
 $pdo = db();
 $perPage = 20;
-if ($isAdmin) {
-    $totalRecords = (int) $pdo->query('SELECT COUNT(*) FROM purchase_requests')->fetchColumn();
-} else {
-    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM purchase_requests WHERE section_id = :section_id');
-    $countStmt->execute([':section_id' => $currentUserSection]);
-    $totalRecords = (int) $countStmt->fetchColumn();
+if ($searchPrNo !== '') {
+    $searchLike = '%' . $searchPrNo . '%';
 }
+
+$whereParts = [];
+$queryParams = [];
+
+if (!$isAdmin) {
+    $whereParts[] = 'section_id = :section_id';
+    $queryParams[':section_id'] = $currentUserSection;
+}
+
+if ($searchPrNo !== '') {
+    $whereParts[] = 'pr_no LIKE :search_pr_no';
+    $queryParams[':search_pr_no'] = $searchLike;
+}
+
+$whereSql = $whereParts !== [] ? (' WHERE ' . implode(' AND ', $whereParts)) : '';
+
+$countStmt = $pdo->prepare('SELECT COUNT(*) FROM purchase_requests' . $whereSql);
+foreach ($queryParams as $key => $value) {
+    $countStmt->bindValue($key, $value, is_string($value) ? PDO::PARAM_STR : PDO::PARAM_INT);
+}
+$countStmt->execute();
+$totalRecords = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalRecords / $perPage));
 $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
 if ($page < 1) {
@@ -38,14 +57,12 @@ $listSql = 'SELECT pr.*,
                        ORDER BY prs.created_at DESC, prs.id DESC
                        LIMIT 1
                    ) AS latest_status
-            FROM purchase_requests pr';
-if (!$isAdmin) {
-    $listSql .= ' WHERE pr.section_id = :section_id';
-}
-$listSql .= ' ORDER BY pr.id DESC LIMIT :limit OFFSET :offset';
+            FROM purchase_requests pr'
+    . $whereSql
+    . ' ORDER BY pr.id DESC LIMIT :limit OFFSET :offset';
 $listStmt = $pdo->prepare($listSql);
-if (!$isAdmin) {
-    $listStmt->bindValue(':section_id', $currentUserSection, PDO::PARAM_STR);
+foreach ($queryParams as $key => $value) {
+    $listStmt->bindValue($key, $value, is_string($value) ? PDO::PARAM_STR : PDO::PARAM_INT);
 }
 $listStmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
 $listStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -165,9 +182,24 @@ function e(?string $value): string
             </div>
 
             <div class="lg:col-span-4 premium-card rounded-3xl border border-white/80 p-6 fade-in">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-semibold">Saved Records</h2>
-                    <span class="text-xs text-slate-500">Page <?= $page ?> of <?= $totalPages ?> · 20 per page</span>
+                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold">Saved Records</h2>
+                        <span class="text-xs text-slate-500">Page <?= $page ?> of <?= $totalPages ?> · 20 per page</span>
+                    </div>
+                    <form method="get" class="flex w-full max-w-md items-center gap-2">
+                        <input
+                            type="text"
+                            name="pr_no"
+                            value="<?= e($searchPrNo) ?>"
+                            placeholder="Search PR No."
+                            class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm transition focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-100"
+                        >
+                        <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Search</button>
+                        <?php if ($searchPrNo !== ''): ?>
+                            <a href="index.php" class="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Clear</a>
+                        <?php endif; ?>
+                    </form>
                 </div>
 
                 <div class="mt-4 overflow-auto rounded-2xl border border-slate-200 bg-white">
@@ -249,17 +281,17 @@ function e(?string $value): string
                     ?>
                     <div class="mt-4 flex flex-wrap items-center gap-2">
                         <a
-                            href="?page=<?= max(1, $page - 1) ?>"
+                            href="?page=<?= max(1, $page - 1) ?><?= $searchPrNo !== '' ? '&pr_no=' . urlencode($searchPrNo) : '' ?>"
                             class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $page <= 1 ? 'pointer-events-none border-slate-200 text-slate-400 bg-slate-50' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
                         >Prev</a>
                         <?php for ($p = $startPage; $p <= $endPage; $p++): ?>
                             <a
-                                href="?page=<?= $p ?>"
+                                href="?page=<?= $p ?><?= $searchPrNo !== '' ? '&pr_no=' . urlencode($searchPrNo) : '' ?>"
                                 class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $p === $page ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
                             ><?= $p ?></a>
                         <?php endfor; ?>
                         <a
-                            href="?page=<?= min($totalPages, $page + 1) ?>"
+                            href="?page=<?= min($totalPages, $page + 1) ?><?= $searchPrNo !== '' ? '&pr_no=' . urlencode($searchPrNo) : '' ?>"
                             class="inline-flex items-center rounded-lg border px-3 py-1.5 text-sm <?= $page >= $totalPages ? 'pointer-events-none border-slate-200 text-slate-400 bg-slate-50' : 'border-slate-300 text-slate-700 hover:bg-slate-50' ?>"
                         >Next</a>
                     </div>
