@@ -74,6 +74,7 @@ function db(): PDO
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS purchase_requests (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            section_id VARCHAR(255) NULL,
             file_name VARCHAR(255) NOT NULL,
             fund_cluster TEXT,
             pr_no VARCHAR(100),
@@ -111,6 +112,19 @@ function db(): PDO
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
 
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS purchase_request_statuses (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            purchase_request_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            status VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            CONSTRAINT fk_purchase_request_statuses_pr
+                FOREIGN KEY (purchase_request_id) REFERENCES purchase_requests(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
     $indexExistsStmt = $pdo->prepare(
         'SELECT 1
          FROM information_schema.statistics
@@ -119,6 +133,25 @@ function db(): PDO
            AND index_name = :index_name
          LIMIT 1'
     );
+
+    $columnExistsStmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.columns
+         WHERE table_schema = :schema
+           AND table_name = :table_name
+           AND column_name = :column_name
+         LIMIT 1'
+    );
+
+    $columnExistsStmt->execute([
+        ':schema' => $name,
+        ':table_name' => 'purchase_requests',
+        ':column_name' => 'section_id',
+    ]);
+    if ($columnExistsStmt->fetchColumn() === false) {
+        $pdo->exec('ALTER TABLE purchase_requests ADD COLUMN section_id VARCHAR(255) NULL AFTER id');
+    }
+
     $indexExistsStmt->execute([
         ':schema' => $name,
         ':table_name' => 'purchase_request_items',
@@ -126,6 +159,15 @@ function db(): PDO
     ]);
     if ($indexExistsStmt->fetchColumn() === false) {
         $pdo->exec('CREATE INDEX idx_purchase_request_items_prid ON purchase_request_items(purchase_request_id)');
+    }
+
+    $indexExistsStmt->execute([
+        ':schema' => $name,
+        ':table_name' => 'purchase_request_statuses',
+        ':index_name' => 'idx_purchase_request_statuses_prid',
+    ]);
+    if ($indexExistsStmt->fetchColumn() === false) {
+        $pdo->exec('CREATE INDEX idx_purchase_request_statuses_prid ON purchase_request_statuses(purchase_request_id)');
     }
 
     return $pdo;

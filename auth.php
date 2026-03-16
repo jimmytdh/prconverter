@@ -22,7 +22,50 @@ function currentUser(): ?array
     return is_array($user) ? $user : null;
 }
 
-function loginUser(array $user): void
+function currentUserId(): int
+{
+    $user = currentUser();
+    return (int) ($user['id'] ?? 0);
+}
+
+function currentUserSection(): string
+{
+    $user = currentUser();
+    return trim((string) ($user['section'] ?? ''));
+}
+
+function currentUserAccessLevel(): string
+{
+    $user = currentUser();
+    $level = strtolower(trim((string) ($user['access_level'] ?? 'standard')));
+    return $level !== '' ? $level : 'standard';
+}
+
+function currentUserIsAdmin(): bool
+{
+    return currentUserAccessLevel() === 'admin';
+}
+
+function converterAccessLevel(PDO $pdo, int $userId): string
+{
+    $stmt = $pdo->prepare(
+        'SELECT level
+         FROM user_priv
+         WHERE user_id = :user_id
+           AND syscode = :syscode
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $stmt->execute([
+        ':user_id' => $userId,
+        ':syscode' => 'converter',
+    ]);
+
+    $level = strtolower(trim((string) $stmt->fetchColumn()));
+    return $level !== '' ? $level : 'standard';
+}
+
+function loginUser(array $user, string $accessLevel = 'standard'): void
 {
     ensureSessionStarted();
     session_regenerate_id(true);
@@ -31,6 +74,8 @@ function loginUser(array $user): void
         'name' => (string) ($user['name'] ?? ''),
         'username' => (string) ($user['username'] ?? ''),
         'email' => (string) ($user['email'] ?? ''),
+        'section' => trim((string) ($user['section'] ?? '')),
+        'access_level' => strtolower(trim($accessLevel)) !== '' ? strtolower(trim($accessLevel)) : 'standard',
     ];
 }
 
@@ -105,4 +150,23 @@ function authDb(): PDO
     }
 
     return $pdo;
+}
+
+function findAccessiblePurchaseRequest(PDO $pdo, int $prId, string $columns = 'id'): ?array
+{
+    $sql = 'SELECT ' . $columns . ' FROM purchase_requests WHERE id = :id';
+    $params = [':id' => $prId];
+
+    if (!currentUserIsAdmin()) {
+        $sql .= ' AND section_id = :section_id';
+        $params[':section_id'] = currentUserSection();
+    }
+
+    $sql .= ' LIMIT 1';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
 }

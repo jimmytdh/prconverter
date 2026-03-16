@@ -22,9 +22,7 @@ if ($id <= 0) {
 }
 
 $pdo = db();
-$prStmt = $pdo->prepare('SELECT id, pr_no FROM purchase_requests WHERE id = :id LIMIT 1');
-$prStmt->execute([':id' => $id]);
-$pr = $prStmt->fetch();
+$pr = findAccessiblePurchaseRequest($pdo, $id, 'id, pr_no');
 
 if (!$pr) {
     http_response_code(404);

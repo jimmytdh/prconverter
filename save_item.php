@@ -63,9 +63,7 @@ function recalculatePrTotal(PDO $pdo, int $prId): ?float
 try {
     $pdo->beginTransaction();
 
-    $prStmt = $pdo->prepare('SELECT id FROM purchase_requests WHERE id = :pr_id LIMIT 1');
-    $prStmt->execute([':pr_id' => $prId]);
-    $pr = $prStmt->fetch();
+    $pr = findAccessiblePurchaseRequest($pdo, $prId, 'id');
     if (!$pr) {
         $pdo->rollBack();
         http_response_code(404);

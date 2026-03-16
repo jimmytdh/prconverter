@@ -8,6 +8,7 @@ require_once __DIR__ . '/parser.php';
 
 header('Content-Type: application/json; charset=utf-8');
 requireAuth(true);
+$currentUserSection = currentUserSection();
 
 function respond(int $status, array $payload): never
 {
@@ -138,17 +139,18 @@ if ($action === 'save') {
     try {
         $stmt = $pdo->prepare(
             'INSERT INTO purchase_requests (
-                file_name, fund_cluster, pr_no, responsibility_center_code, request_date,
+                section_id, file_name, fund_cluster, pr_no, responsibility_center_code, request_date,
                 unit, item_description, quantity, unit_cost, total_cost,
                 requested_by, designation1, approved_by, designation2, raw_text
             ) VALUES (
-                :file_name, :fund_cluster, :pr_no, :responsibility_center_code, :request_date,
+                :section_id, :file_name, :fund_cluster, :pr_no, :responsibility_center_code, :request_date,
                 :unit, :item_description, :quantity, :unit_cost, :total_cost,
                 :requested_by, :designation1, :approved_by, :designation2, :raw_text
             )'
         );
 
         $stmt->execute([
+            ':section_id' => $currentUserSection !== '' ? $currentUserSection : null,
             ':file_name' => $tempFile,
             ':fund_cluster' => $parsed['fund_cluster'],
             ':pr_no' => $parsed['pr_no'],
@@ -167,6 +169,16 @@ if ($action === 'save') {
         ]);
 
         $id = (int) $pdo->lastInsertId();
+
+        $statusStmt = $pdo->prepare(
+            'INSERT INTO purchase_request_statuses (purchase_request_id, user_id, status)
+             VALUES (:purchase_request_id, :user_id, :status)'
+        );
+        $statusStmt->execute([
+            ':purchase_request_id' => $id,
+            ':user_id' => currentUserId(),
+            ':status' => 'Saved',
+        ]);
 
         $items = $parsed['items'] ?? [];
         if (is_array($items) && $items !== []) {
@@ -204,6 +216,7 @@ if ($action === 'save') {
         'stage' => 'saved',
         'message' => 'PDF processed and saved.',
         'record_id' => $id,
+        'latest_status' => 'Saved',
         'items_count' => is_array($parsed['items'] ?? null) ? count($parsed['items']) : 0,
         'data' => $parsed,
     ]);

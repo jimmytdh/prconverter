@@ -26,9 +26,7 @@ $pdo = db();
 try {
     $pdo->beginTransaction();
 
-    $stmt = $pdo->prepare('SELECT id, file_name, pr_no FROM purchase_requests WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => $id]);
-    $row = $stmt->fetch();
+    $row = findAccessiblePurchaseRequest($pdo, $id, 'id, file_name, pr_no');
 
     if (!$row) {
         $pdo->rollBack();

@@ -7,10 +7,18 @@ require_once __DIR__ . '/auth.php';
 
 requireAuth();
 $authUser = currentUser();
+$currentUserSection = currentUserSection();
+$isAdmin = currentUserIsAdmin();
 
 $pdo = db();
 $perPage = 20;
-$totalRecords = (int) $pdo->query('SELECT COUNT(*) FROM purchase_requests')->fetchColumn();
+if ($isAdmin) {
+    $totalRecords = (int) $pdo->query('SELECT COUNT(*) FROM purchase_requests')->fetchColumn();
+} else {
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM purchase_requests WHERE section_id = :section_id');
+    $countStmt->execute([':section_id' => $currentUserSection]);
+    $totalRecords = (int) $countStmt->fetchColumn();
+}
 $totalPages = max(1, (int) ceil($totalRecords / $perPage));
 $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
 if ($page < 1) {
@@ -21,13 +29,24 @@ if ($page > $totalPages) {
 }
 $offset = ($page - 1) * $perPage;
 
-$listStmt = $pdo->prepare(
-    'SELECT pr.*,
-            (SELECT COUNT(*) FROM purchase_request_items pri WHERE pri.purchase_request_id = pr.id) AS items_count
-     FROM purchase_requests pr
-     ORDER BY pr.id DESC
-     LIMIT :limit OFFSET :offset'
-);
+$listSql = 'SELECT pr.*,
+                   (SELECT COUNT(*) FROM purchase_request_items pri WHERE pri.purchase_request_id = pr.id) AS items_count,
+                   (
+                       SELECT prs.status
+                       FROM purchase_request_statuses prs
+                       WHERE prs.purchase_request_id = pr.id
+                       ORDER BY prs.created_at DESC, prs.id DESC
+                       LIMIT 1
+                   ) AS latest_status
+            FROM purchase_requests pr';
+if (!$isAdmin) {
+    $listSql .= ' WHERE pr.section_id = :section_id';
+}
+$listSql .= ' ORDER BY pr.id DESC LIMIT :limit OFFSET :offset';
+$listStmt = $pdo->prepare($listSql);
+if (!$isAdmin) {
+    $listStmt->bindValue(':section_id', $currentUserSection, PDO::PARAM_STR);
+}
 $listStmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
 $listStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 $listStmt->execute();
@@ -160,14 +179,17 @@ function e(?string $value): string
                                 <th class="px-4 py-3">Fund Cluster</th>
                                 <th class="px-4 py-3 text-center">Items</th>
                                 <th class="px-4 py-3 text-right">Total Cost</th>
-                                <th class="px-4 py-3">Requested By</th>
+                                <?php if ($isAdmin): ?>
+                                    <th class="px-4 py-3">Requested By</th>
+                                <?php endif; ?>
+                                <th class="px-4 py-3">Status</th>
                                 <th class="px-4 py-3 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="recordsTableBody">
                             <?php if (!$rows): ?>
                                 <tr>
-                                    <td colspan="7" class="py-8 text-center text-slate-500">No records yet.</td>
+                                    <td colspan="<?= $isAdmin ? 8 : 7 ?>" class="py-8 text-center text-slate-500">No records yet.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($rows as $row): ?>
@@ -190,7 +212,19 @@ function e(?string $value): string
                                             </button>
                                         </td>
                                         <td class="js-pr-total px-4 py-3 text-right"><?= $row['total_cost'] !== null ? number_format((float) $row['total_cost'], 2) : '-' ?></td>
-                                        <td class="px-4 py-3"><?= e($row['requested_by']) ?></td>
+                                        <?php if ($isAdmin): ?>
+                                            <td class="px-4 py-3"><?= e($row['requested_by']) ?></td>
+                                        <?php endif; ?>
+                                        <td class="px-4 py-3">
+                                            <button
+                                                type="button"
+                                                class="js-status-btn inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                                                data-id="<?= (int) $row['id'] ?>"
+                                                data-pr="<?= e($row['pr_no']) ?>"
+                                            >
+                                                <?= e($row['latest_status'] ?? 'No Status') ?>
+                                            </button>
+                                        </td>
                                         <td class="px-4 py-3 text-center">
                                             <button
                                                 type="button"
@@ -361,6 +395,40 @@ function e(?string $value): string
         </div>
     </div>
 
+    <div id="statusModal" class="fixed inset-0 z-50 hidden">
+        <div class="js-close-modal absolute inset-0 bg-slate-900/45" data-modal="#statusModal"></div>
+        <div class="relative z-10 max-w-2xl mx-auto px-4 py-10">
+            <div class="rounded-2xl bg-white border border-slate-200 shadow-xl p-6">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900">PR Status</h3>
+                        <p id="statusModalSubtitle" class="mt-1 text-sm text-slate-600">Update the current PR status.</p>
+                    </div>
+                    <button type="button" class="js-close-modal rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" data-modal="#statusModal">Close</button>
+                </div>
+
+                <form id="statusForm" class="mt-6 space-y-4">
+                    <input type="hidden" id="statusFormPrId" value="">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-slate-700" for="statusValue">Current Status</label>
+                        <input id="statusValue" name="status" type="text" maxlength="255" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm transition focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="e.g. Pending approval, Approved, Released">
+                    </div>
+                    <div class="flex items-center justify-end gap-3">
+                        <button type="button" class="js-close-modal rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" data-modal="#statusModal">Cancel</button>
+                        <button type="submit" id="saveStatusBtn" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">Save Status</button>
+                    </div>
+                </form>
+
+                <div class="mt-6">
+                    <h4 class="text-sm font-semibold uppercase tracking-wider text-slate-500">Status History</h4>
+                    <div id="statusHistory" class="mt-3 space-y-3">
+                        <p class="text-sm text-slate-500">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const labels = {
             fund_cluster: 'Fund Cluster',
@@ -378,12 +446,16 @@ function e(?string $value): string
             designation2: 'Designation2'
         };
         let pendingDelete = null;
+        const IS_ADMIN = <?= $isAdmin ? 'true' : 'false' ?>;
+        const RECORDS_TABLE_COLSPAN = <?= $isAdmin ? 8 : 7 ?>;
         const PAGE_SIZE = <?= (int) $perPage ?>;
         let pendingProcess = null;
         let currentItemsContext = { prId: null, prNo: '' };
         let pendingItemDelete = null;
         let itemFormMode = 'create';
         let currentItems = [];
+        let currentStatusContext = { prId: null, prNo: '' };
+        let pendingStatusDelete = null;
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -416,7 +488,7 @@ function e(?string $value): string
             }
 
             if (tbody.find('tr').length === 0) {
-                tbody.append('<tr><td colspan="7" class="py-8 text-center text-slate-500">No records yet.</td></tr>');
+                tbody.append(`<tr><td colspan="${RECORDS_TABLE_COLSPAN}" class="py-8 text-center text-slate-500">No records yet.</td></tr>`);
             }
         }
 
@@ -457,9 +529,10 @@ function e(?string $value): string
             const prNo = row.pr_no || '';
             const requestDate = row.request_date || '';
             const fundCluster = row.fund_cluster || '';
-            const requestedBy = row.requested_by || '';
             const totalCost = row.total_cost ?? null;
             const itemsCount = Number(row.items_count ?? (res.items_count ?? 0));
+            const latestStatus = row.latest_status || res.latest_status || 'Saved';
+            const requestedBy = row.requested_by || '';
 
             const tbody = $('#recordsTableBody');
             tbody.find('tr').filter(function () {
@@ -486,7 +559,17 @@ function e(?string $value): string
                         </button>
                     </td>
                     <td class="js-pr-total px-4 py-3 text-right">${formatMoney(totalCost)}</td>
-                    <td class="px-4 py-3">${escapeHtml(requestedBy || '-')}</td>
+                    ${IS_ADMIN ? `<td class="px-4 py-3">${escapeHtml(requestedBy || '-')}</td>` : ''}
+                    <td class="px-4 py-3">
+                        <button
+                            type="button"
+                            class="js-status-btn inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                            data-id="${rowId}"
+                            data-pr="${escapeHtml(prNo)}"
+                        >
+                            ${escapeHtml(latestStatus)}
+                        </button>
+                    </td>
                     <td class="px-4 py-3 text-center">
                         <button
                             type="button"
@@ -521,10 +604,78 @@ function e(?string $value): string
                 $('#itemsModal').hasClass('hidden') &&
                 $('#deleteModal').hasClass('hidden') &&
                 $('#deleteItemModal').hasClass('hidden') &&
-                $('#processConfirmModal').hasClass('hidden')
+                $('#processConfirmModal').hasClass('hidden') &&
+                $('#statusModal').hasClass('hidden')
             ) {
                 $('body').removeClass('overflow-hidden');
             }
+        }
+
+        function renderStatusHistory(entries) {
+            const box = $('#statusHistory');
+            box.empty();
+
+            if (!Array.isArray(entries) || entries.length === 0) {
+                box.append('<p class="text-sm text-slate-500">No status updates yet.</p>');
+                return;
+            }
+
+            entries.forEach((entry) => {
+                const createdAt = entry.created_at || '';
+                const statusText = entry.status || 'No Status';
+                box.append(
+                    `<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">${escapeHtml(statusText)}</p>
+                                <p class="mt-1 text-xs text-slate-500">${escapeHtml(createdAt)}</p>
+                            </div>
+                            <button
+                                type="button"
+                                class="js-delete-status-btn inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                                data-status-id="${Number(entry.id || 0)}"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    </div>`
+                );
+            });
+        }
+
+        function updateStatusButton(prId, statusText) {
+            const button = $(`.js-status-btn[data-id='${prId}']`);
+            if (!button.length) {
+                return;
+            }
+            button.text(statusText || 'No Status');
+        }
+
+        function loadStatusHistory(prId, prNo) {
+            currentStatusContext = { prId, prNo };
+            $('#statusFormPrId').val(prId);
+            $('#statusModalSubtitle').text(`PR No. ${prNo || '-'} status history and latest update.`);
+            $('#statusHistory').html('<p class="text-sm text-slate-500">Loading...</p>');
+
+            return $.ajax({
+                url: 'pr_status.php',
+                method: 'GET',
+                dataType: 'json',
+                data: { id: prId }
+            }).done(function (res) {
+                if (!res.ok) {
+                    $('#statusHistory').html(`<p class="text-sm text-rose-600">${escapeHtml(res.message || 'Failed to load status history.')}</p>`);
+                    return;
+                }
+
+                const entries = Array.isArray(res.statuses) ? res.statuses : [];
+                const latestStatus = res.latest_status || (entries[0] ? entries[0].status : '') || '';
+                $('#statusValue').val(latestStatus);
+                renderStatusHistory(entries);
+                updateStatusButton(prId, latestStatus || 'No Status');
+            }).fail(function () {
+                $('#statusHistory').html('<p class="text-sm text-rose-600">Failed to load status history.</p>');
+            });
         }
 
         function renderItems(items) {
@@ -654,6 +805,62 @@ function e(?string $value): string
             resetItemForm();
             openModal('#itemsModal');
             loadItems(id, pr);
+        });
+
+        $(document).on('click', '.js-status-btn', function () {
+            const id = Number($(this).data('id'));
+            const pr = String($(this).data('pr') || '');
+            openModal('#statusModal');
+            loadStatusHistory(id, pr);
+            $('#statusValue').trigger('focus');
+        });
+
+        $(document).on('click', '.js-delete-status-btn', function () {
+            const statusId = Number($(this).data('status-id'));
+            if (!currentStatusContext.prId || !statusId) {
+                return;
+            }
+
+            pendingStatusDelete = {
+                prId: currentStatusContext.prId,
+                statusId
+            };
+
+            const button = $(this);
+            button.prop('disabled', true).text('Removing...');
+
+            $.ajax({
+                url: 'pr_status.php',
+                method: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'delete',
+                    pr_id: pendingStatusDelete.prId,
+                    status_id: pendingStatusDelete.statusId
+                }
+            }).done(function (res) {
+                if (!res.ok) {
+                    showStatus('error', res.message || 'Failed to delete status.');
+                    return;
+                }
+
+                const latestStatus = res.latest_status || 'No Status';
+                updateStatusButton(pendingStatusDelete.prId, latestStatus);
+                $('#statusValue').val(res.latest_status || '');
+                renderStatusHistory(Array.isArray(res.statuses) ? res.statuses : []);
+                showStatus('success', res.message || 'Status history entry deleted.');
+            }).fail(function (xhr) {
+                let message = 'Failed to delete status.';
+                try {
+                    const json = JSON.parse(xhr.responseText);
+                    if (json.message) {
+                        message = json.message;
+                    }
+                } catch (_) {}
+                showStatus('error', message);
+            }).always(function () {
+                pendingStatusDelete = null;
+            });
         });
 
         $('#addNewItemBtn').on('click', function () {
@@ -1008,6 +1215,52 @@ function e(?string $value): string
 
                 showStatus('error', message);
                 setProcessLoadingState(false);
+            });
+        });
+
+        $('#statusForm').on('submit', function (e) {
+            e.preventDefault();
+
+            const prId = Number($('#statusFormPrId').val() || 0);
+            const statusValue = String($('#statusValue').val() || '').trim();
+            if (!prId || statusValue === '') {
+                showStatus('error', 'Status is required.');
+                return;
+            }
+
+            const saveBtn = $('#saveStatusBtn');
+            saveBtn.prop('disabled', true).text('Saving...');
+
+            $.ajax({
+                url: 'pr_status.php',
+                method: 'POST',
+                dataType: 'json',
+                data: {
+                    pr_id: prId,
+                    status: statusValue
+                }
+            }).done(function (res) {
+                if (!res.ok) {
+                    showStatus('error', res.message || 'Failed to save status.');
+                    return;
+                }
+
+                const latestStatus = res.latest_status || statusValue;
+                updateStatusButton(prId, latestStatus);
+                $('#statusValue').val(latestStatus);
+                renderStatusHistory(Array.isArray(res.statuses) ? res.statuses : []);
+                showStatus('success', res.message || 'Status saved successfully.');
+            }).fail(function (xhr) {
+                let message = 'Failed to save status.';
+                try {
+                    const json = JSON.parse(xhr.responseText);
+                    if (json.message) {
+                        message = json.message;
+                    }
+                } catch (_) {}
+                showStatus('error', message);
+            }).always(function () {
+                saveBtn.prop('disabled', false).text('Save Status');
             });
         });
     </script>

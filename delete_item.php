@@ -45,13 +45,25 @@ function recalculatePrTotal(PDO $pdo, int $prId): ?float
 try {
     $pdo->beginTransaction();
 
+    $pr = findAccessiblePurchaseRequest($pdo, $prId, 'id');
+    if (!$pr) {
+        $pdo->rollBack();
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'message' => 'Record not found']);
+        exit;
+    }
+
     $findStmt = $pdo->prepare(
         'SELECT id, purchase_request_id
          FROM purchase_request_items
          WHERE id = :item_id
+           AND purchase_request_id = :pr_id
          LIMIT 1'
     );
-    $findStmt->execute([':item_id' => $itemId]);
+    $findStmt->execute([
+        ':item_id' => $itemId,
+        ':pr_id' => $prId,
+    ]);
     $item = $findStmt->fetch();
 
     if (!$item || (int) $item['purchase_request_id'] !== $prId) {

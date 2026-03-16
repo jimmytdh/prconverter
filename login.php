@@ -31,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$user || !password_verify($password, (string) ($user['password'] ?? ''))) {
                 $error = 'Invalid credentials.';
             } else {
-                loginUser($user);
+                $accessLevel = converterAccessLevel($pdo, (int) ($user['id'] ?? 0));
+                loginUser($user, $accessLevel);
                 header('Location: ' . $next);
                 exit;
             }
